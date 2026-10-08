@@ -31,7 +31,7 @@ if "conn" not in st.session_state:
 
 conn = st.session_state.conn
 
-# 2. Permanent Dark Mode, Sticky Header Tabs, & Floating Controls Styling
+# 2. Styling (Dark Theme, Mode Selector, Floating Right-Side Controls)
 st.markdown("""
     <style>
         /* Base Dark Backgrounds */
@@ -39,18 +39,23 @@ st.markdown("""
         section[data-testid="stSidebar"] { background-color: #111827 !important; border-right: 1px solid #1f2937 !important; }
         div[data-testid="stChatMessage"] { background-color: #1f2937 !important; border: 1px solid #374151 !important; border-radius: 12px !important; padding: 1rem !important; }
 
-        /* 1. STICKY TABS HEADER */
-        div[data-baseweb="tab-list"] {
-            position: sticky !important;
-            top: 0px !important;
-            background-color: #0b0f17 !important;
-            z-index: 9999 !important;
-            padding-top: 12px !important;
-            padding-bottom: 12px !important;
-            border-bottom: 1px solid #1f2937 !important;
+        /* Sidebar Navigation Radio Styling */
+        div[data-testid="stSidebar"] div[data-testid="stRadio"] label {
+            background-color: #1f2937 !important;
+            border: 1px solid #374151 !important;
+            border-radius: 8px !important;
+            padding: 8px 12px !important;
+            margin-bottom: 4px !important;
+            width: 100% !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+        }
+        div[data-testid="stSidebar"] div[data-testid="stRadio"] label:hover {
+            border-color: #6366f1 !important;
+            background-color: #374151 !important;
         }
 
-        /* 2. MODE SELECTOR (Gemini-Style Horizontal Pills) */
+        /* Mode Selector (Gemini-Style Horizontal Pills) */
         div[data-testid="stRadio"] > div {
             display: flex !important;
             flex-direction: row !important;
@@ -72,7 +77,7 @@ st.markdown("""
             color: #ffffff !important;
         }
 
-        /* 3. SCROLL TO BOTTOM FLOATING ARROW */
+        /* Floating Scroll to Bottom Arrow */
         .scroll-bottom-btn {
             position: fixed;
             bottom: 90px;
@@ -100,7 +105,7 @@ st.markdown("""
             color: #6366f1;
         }
 
-        /* 4. RIGHT-SIDE QUERY DOT INDEX */
+        /* Right-Side Query Dot Index */
         .nav-dot-container {
             position: fixed;
             right: 18px;
@@ -157,7 +162,16 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. Sidebar Setup
+# 3. Sidebar Navigation & Settings
+st.sidebar.title("📍 Navigation")
+app_mode = st.sidebar.radio(
+    "Select View",
+    options=["💬 Chat Analytics", "📊 Data View & Management"],
+    index=0,
+    label_visibility="collapsed"
+)
+
+st.sidebar.divider()
 st.sidebar.title("⚙️ Settings")
 dev_mode = st.sidebar.toggle("🛠️ Developer Mode", value=False)
 st.sidebar.divider()
@@ -192,13 +206,10 @@ def prepare_active_table():
 
 prepare_active_table()
 
-# 4. Main Navigation Tabs (Sticky Header)
-tab_chat, tab_data = st.tabs(["💬 Chat Analytics", "📊 Data View & Management"])
-
 # ==========================================
-# TAB 1: Chat Analytics Engine
+# VIEW 1: CHAT ANALYTICS ENGINE
 # ==========================================
-with tab_chat:
+if app_mode == "💬 Chat Analytics":
     st.title("🎫 Customer Support AI Assistant")
     st.caption(f"Ask natural language questions to analyze your tickets. Target view: **{query_scope}**")
 
@@ -208,7 +219,7 @@ with tab_chat:
             "content": "Hello! I can perform analytics, summarize customer issues, or track refund metrics. What would you like to investigate?"
         }]
 
-    # Render message history and assign scroll anchors
+    # Render message history and assign anchors
     user_query_count = 0
     user_prompts = []
 
@@ -225,7 +236,7 @@ with tab_chat:
             if "df" in msg and msg["df"] is not None and not msg["df"].empty:
                 st.dataframe(msg["df"], width="stretch")
 
-    # Mode Selector directly above chat_input
+    # Mode Selector Directly Above Chat Box
     selected_mode = st.radio(
         "Response Mode",
         options=["⚡ Normal", "🧠 Verbose"],
@@ -236,7 +247,7 @@ with tab_chat:
     )
     verbose_mode = (selected_mode == "🧠 Verbose")
 
-    # Floating Dot Navigation & Scroll-to-Bottom Arrow UI
+    # Floating Navigation Dots & Downward Arrow Button
     if user_prompts:
         dots_html = ""
         for idx, prompt_text in enumerate(user_prompts):
@@ -259,80 +270,10 @@ with tab_chat:
             <div id="latest-anchor"></div>
         ''', unsafe_allow_html=True)
 
+    # Chat Input Execution
+    if prompt := st.chat_input("e.g., Summarize top complaints logged in the last 30 days"):
+        st.session_state.messages.append({"role": "user", "content": prompt})
 
-# ==========================================
-# TAB 2: Data Ingestion & Dataset Viewer
-# ==========================================
-with tab_data:
-    st.header("📊 Dataset Management & Ingestion")
-    
-    col1, col2 = st.columns([1, 1], gap="large")
-
-    with col1:
-        st.subheader("📤 Upload New Dataset")
-        uploaded_file = st.file_uploader("Upload JSON File", type=["json"], key="new_dataset_uploader")
-        dataset_name = st.text_input("New Table Name", placeholder="e.g., q2_tickets").strip().replace(" ", "_")
-        
-        if st.button("Create Dataset Table"):
-            if uploaded_file and dataset_name:
-                try:
-                    data = json.load(uploaded_file)
-                    df_upload = pd.DataFrame(data)
-                    if "created_at" in df_upload.columns:
-                        df_upload["created_at"] = pd.to_datetime(df_upload["created_at"])
-                    
-                    conn.register("temp_upload", df_upload)
-                    conn.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM temp_upload")
-                    
-                    if dataset_name not in st.session_state.available_tables:
-                        st.session_state.available_tables.append(dataset_name)
-                    
-                    st.success(f"Successfully created table `{dataset_name}`!")
-                    st.rerun()
-                except Exception as err:
-                    st.error(f"Error loading JSON: {err}")
-            else:
-                st.warning("Please provide both a JSON file and a unique table name.")
-
-    with col2:
-        st.subheader("➕ Append Data to Existing Dataset")
-        target_table = st.selectbox("Select Target Dataset Table", options=st.session_state.available_tables)
-        append_file = st.file_uploader("Upload JSON to Append", type=["json"], key="append_dataset_uploader")
-        
-        if st.button("Append Records"):
-            if append_file and target_table:
-                try:
-                    append_data = json.load(append_file)
-                    df_append = pd.DataFrame(append_data)
-                    if "created_at" in df_append.columns:
-                        df_append["created_at"] = pd.to_datetime(df_append["created_at"])
-                        
-                    conn.register("temp_append", df_append)
-                    conn.execute(f"INSERT INTO {target_table} SELECT * FROM temp_append")
-                    st.success(f"Successfully appended records to `{target_table}`!")
-                    st.rerun()
-                except Exception as err:
-                    st.error(f"Append failed: {err}")
-
-    st.divider()
-    st.subheader("🔍 Dataset Viewer")
-    view_target = st.selectbox("Inspect dataset:", options=["Combined View (All Datasets)"] + st.session_state.available_tables)
-    
-    if view_target == "Combined View (All Datasets)":
-        preview_df = conn.execute("SELECT * FROM active_tickets").df()
-    else:
-        preview_df = conn.execute(f"SELECT * FROM {view_target}").df()
-        
-    st.dataframe(preview_df, width="stretch")
-
-
-# ==========================================
-# CHAT INPUT ENGINE
-# ==========================================
-if prompt := st.chat_input("e.g., Summarize top complaints logged in the last 30 days"):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    with tab_chat:
         with st.chat_message("user"):
             st.write(prompt)
         
@@ -435,4 +376,70 @@ if prompt := st.chat_input("e.g., Summarize top complaints logged in the last 30
                             "content": f"⚠️ Unable to execute query after {max_retries} attempts.\nErrors: {'; '.join(error_logs)}"
                         })
 
-    st.rerun()
+        st.rerun()
+
+
+# ==========================================
+# VIEW 2: DATA MANAGEMENT & INGESTION
+# ==========================================
+elif app_mode == "📊 Data View & Management":
+    st.title("📊 Dataset Management & Ingestion")
+    
+    col1, col2 = st.columns([1, 1], gap="large")
+
+    with col1:
+        st.subheader("📤 Upload New Dataset")
+        uploaded_file = st.file_uploader("Upload JSON File", type=["json"], key="new_dataset_uploader")
+        dataset_name = st.text_input("New Table Name", placeholder="e.g., q2_tickets").strip().replace(" ", "_")
+        
+        if st.button("Create Dataset Table"):
+            if uploaded_file and dataset_name:
+                try:
+                    data = json.load(uploaded_file)
+                    df_upload = pd.DataFrame(data)
+                    if "created_at" in df_upload.columns:
+                        df_upload["created_at"] = pd.to_datetime(df_upload["created_at"])
+                    
+                    conn.register("temp_upload", df_upload)
+                    conn.execute(f"CREATE TABLE {dataset_name} AS SELECT * FROM temp_upload")
+                    
+                    if dataset_name not in st.session_state.available_tables:
+                        st.session_state.available_tables.append(dataset_name)
+                    
+                    st.success(f"Successfully created table `{dataset_name}`!")
+                    st.rerun()
+                except Exception as err:
+                    st.error(f"Error loading JSON: {err}")
+            else:
+                st.warning("Please provide both a JSON file and a unique table name.")
+
+    with col2:
+        st.subheader("➕ Append Data to Existing Dataset")
+        target_table = st.selectbox("Select Target Dataset Table", options=st.session_state.available_tables)
+        append_file = st.file_uploader("Upload JSON to Append", type=["json"], key="append_dataset_uploader")
+        
+        if st.button("Append Records"):
+            if append_file and target_table:
+                try:
+                    append_data = json.load(append_file)
+                    df_append = pd.DataFrame(append_data)
+                    if "created_at" in df_append.columns:
+                        df_append["created_at"] = pd.to_datetime(df_append["created_at"])
+                        
+                    conn.register("temp_append", df_append)
+                    conn.execute(f"INSERT INTO {target_table} SELECT * FROM temp_append")
+                    st.success(f"Successfully appended records to `{target_table}`!")
+                    st.rerun()
+                except Exception as err:
+                    st.error(f"Append failed: {err}")
+
+    st.divider()
+    st.subheader("🔍 Dataset Viewer")
+    view_target = st.selectbox("Inspect dataset:", options=["Combined View (All Datasets)"] + st.session_state.available_tables)
+    
+    if view_target == "Combined View (All Datasets)":
+        preview_df = conn.execute("SELECT * FROM active_tickets").df()
+    else:
+        preview_df = conn.execute(f"SELECT * FROM {view_target}").df()
+        
+    st.dataframe(preview_df, width="stretch")
